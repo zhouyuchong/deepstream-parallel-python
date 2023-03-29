@@ -4,15 +4,12 @@
 + [deepstream demux](https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/tree/master/apps/deepstream-demux-multi-in-multi-out)
 
 ## TODO
-暂时未解决多个streamdemux连同一个tee后，除了第一个demuxer，其他demuxer都没有视频流。
-新的解决办法：使用一个demuxer，在demuxer后面每一路都接tee，streammux再和tee进行连接。
+Fail to use multi `streamdemux`. Only the first branch could recieve and infer data. Reason Unknow. Maybe some configs are wrong with other `streamdemux` or `streammux`.
 
-## Demo
-单pipelin单模型(yolov5)
-```
-python3 single_gie.py -i file:///path/to/file file:///path/to/file ...
-```
-单pipeline并行模型(yolov5和retinaface)
+## Solution
+Instead of **multi streamdemux**, try to use **multi tee**. Link a tee to `streamdemux` for every `src pad`. 
+
+## Usage
 ```
 python3 deepstream_parallel.py -i file:///path/to/file file:///path/to/file ...
 ```
