@@ -1,0 +1,9 @@
+*.jpg
+*.png
+__pycache__/*
+*.pyc
+__pycache__
+*.npy
+*.engine
+*.so
+*.json
