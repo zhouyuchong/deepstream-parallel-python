@@ -1,0 +1,14 @@
+[inference]
+app-activated=[0, 1]
+
+[streammux]
+batch-push-timeout=400
+nvbuf-memory-type=0
+batch-size=16
+width=3840
+height=2160
+gpu-id=0
+
+[kafka-pipeline]
+ip=localhost
+port=9092
