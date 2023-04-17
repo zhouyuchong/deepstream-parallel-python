@@ -1,27 +1,27 @@
 import abc
 import functools
 from threading import RLock, Thread, Lock
-import json
 from kafka import KafkaProducer, KafkaConsumer
-import re
 import time
+import re
+import json
+
 from loguru import logger
 
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
-from .srcm import SRCM
 import sys
 sys.path.append('../')
-import config
+import basic_config
 from common.parse import *
 from app import *
+from .srcm import SRCM
+
 
 
 __all__ = ['DSPipeline']
-
-
 
 
 Gst.init(None)
@@ -63,7 +63,7 @@ class DSPipeline(abc.ABC):
         self.branch_manager = dict()
 
         self.loop = GLib.MainLoop()
-        self.pipeline_config = os.path.join(config.__path__[0], 'config_gst_pipeline.txt')
+        self.pipeline_config = os.path.join(basic_config.PIPELINE_CLIENT_PATH, 'config_gst_pipeline.txt')
 
         self.tee = dict()
         self.srcm = None
@@ -79,9 +79,6 @@ class DSPipeline(abc.ABC):
 
         # self.build_pipeline()
 
-        
-        
-
     def update_src_abs(self, src, data):
         """
         if ur pipeline support update source config, re-implement this function, default not
@@ -95,71 +92,6 @@ class DSPipeline(abc.ABC):
         print("source %s(id) update infrmation:\n" % src.id, data)
         raise NotImplementedError("current app does not support update source information")
 
-    def bus_call_abs(self, bus, message):
-        t = message.type
-        # TODO log here
-        if t == Gst.MessageType.EOS:
-            logger.error("收到流播放结束信号. end of stream")
-
-        elif t==Gst.MessageType.WARNING:
-            err, debug = message.parse_warning()
-            print("Warning: %s: %s\n" % (err, debug))
-        elif t == Gst.MessageType.ERROR:
-            
-            err, debug = message.parse_error()
-            logger.error("播放时发生错误. error: {}: {}".format(err, debug))
-            struct = str(message.get_structure())
-            search_index = re.search("source-bin-[0-9]{0,1}/", struct)
-            search_index = int(search_index[0].split('-')[2][:-1])
-
-            try:
-                err_id = self.srcm.get_id_by_idx(search_index)
-                # err_url = self.srcm.get_url_by_idx(search_index)
-                logger.warning("id: {} | encounters error: {}.".format(err_id, err))
-            except Exception as e:
-                logger.warning("source: {} didn't exist: {}".format(search_index, e))
-                return
-            
-            # logger.warning("id: {} | {} reach max reconnect retry. sending message...".format(err_id, err_url))
-            time_local = time.localtime(int(time.time()))
-            dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-            msg = {"time": dt, "type": "normal", "id": str(err_id), "error":str(err), "debug": debug}
-            msg = json.dumps(msg).encode('utf-8')
-
-            if str(err).startswith("gst-resource-error-quark") or str(err).startswith("gst-stream-error-quark"):
-                # resource errors from 1 to 16
-                if str(err).endswith("(9)"):
-                    # handle_read_error()
-                    logger.warning("source: {} | error: {}".format(search_index, err))
-                else:
-                    self.producer.send('error', msg)
-                    logger.warning("id: {} will be deleted.".format(err_id))
-                    try:
-                        self.del_src(id=err_id)
-                    except Exception:
-                        logger.error("消息总线中: ERROR, 删除资源时发生错误. id: {} | encounters error: {} while delete.".format(err_id, err))
-
-        elif t == Gst.MessageType.ELEMENT:
-            struct = message.get_structure()
-            # Check for stream-eos message
-            if struct is not None and struct.has_name("stream-eos"):
-                parsed, stream_id = struct.get_uint("stream-id")
-                if parsed:
-                    # Set eos status of stream to True, to be deleted in delete-sources
-                    logger.info("Got EOS from stream-{}".format(stream_id))
-                    eos_id = self.srcm.get_id_by_idx(stream_id)
-                    if eos_id:
-                        time_local = time.localtime(int(time.time()))
-                        dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-                        msg = {"time": dt, "type": "normal", "id": str(eos_id), "error":"EOS", "debug": ""}
-                        msg = json.dumps(msg).encode('utf-8')
-                        self.producer.send('error', msg)
-                        try:
-                            self.del_src(id=eos_id)
-                        except Exception:
-                            logger.error("消息总线中: EOS, 删除资源时发生错误. id: {} encounters e while delete.".format(eos_id))
-        return True 
-
     @DSPD.d_acquire_lock
     def init(self):
         self.pipeline = Gst.Pipeline()
@@ -169,10 +101,12 @@ class DSPipeline(abc.ABC):
             return False, "unable to create pipeline"
         
         # parse pipeline config file
-        ret, self.app_list, kafka_conn_str = parse_config_pipeline(self.pipeline_config)
+        ret, data = parse_config_pipeline(self.pipeline_config)
         if not ret:
+            logger.error(data)
             return ret, "Fail to parse config_pipeline."
-        
+        self.app_list, batch_size, streammux_width, streammux_height, kafka_conn_str = data
+            
         self.producer = KafkaProducer(bootstrap_servers=kafka_conn_str, api_version=(2,10))
         
         self.streammux = Gst.ElementFactory.make("nvstreammux", "Stream-muxer")
@@ -184,9 +118,7 @@ class DSPipeline(abc.ABC):
         self.max_source_num, self.gpu_id = set_property_pipeline(self.pipeline_config, self.streammux)
         # init source manager
         self.srcm = SRCM(max_src_num=self.max_source_num, app_list=self.app_list)
-        # init branches of different apps
         
-
         self.nvstreamdemux = Gst.ElementFactory.make("nvstreamdemux", "nvstreamdemuxer")
 
         self.pipeline.add(self.streammux)
@@ -201,21 +133,6 @@ class DSPipeline(abc.ABC):
                 sys.stderr.write("Unable to create demux src pad \n")
             self.demux_pad_list[i] = demuxsrcpad
   
-        # add and link a gst-tee to every src pad of nvstreamdemux
-        # for i in range(self.max_source_num):
-        #     tmp_tee = Gst.ElementFactory.make("tee", "demuxer-tee-{}".format(i))
-        #     self.pipeline.add(tmp_tee)
-        #     # add gst-tees to tee-list so we can control and reach them later
-        #     self.tee.append(tmp_tee)
-
-        #     padname = "src_%u" % i
-        #     demuxsrcpad = self.nvstreamdemux.get_request_pad(padname)
-        #     if not demuxsrcpad:
-        #         sys.stderr.write("Unable to create demux src pad \n")
-
-        #     sinkpad = tmp_tee.get_static_pad("sink")
-        #     demuxsrcpad.link(sinkpad)
-
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self.bus_call_abs, )
@@ -347,40 +264,8 @@ class DSPipeline(abc.ABC):
         tmp_src_pad = self.demux_pad_list[src.idx]
         sinkpad = tmp_tee.get_static_pad("sink")
         tmp_src_pad.link(sinkpad)
+        self._add_task(src=src)
         
-        # 接下来用tee来连接多个分支
-        infer_ids = src.get_infer_ids()
-        logger.debug("{} infer ids = {}.".format(src.id, infer_ids))
-
-        
-
-        for i in infer_ids:
-            if i not in self.app_list:
-                logger.error("Unsupport App Type")
-                return False, "wrong app type"
-            
-        for app_index in infer_ids:
-            if app_index not in self.branch_manager.keys():
-                if app_index == 0:
-                    branch = Face(self.pipeline, self.srcm, self.perf)
-                    self.branch_manager[0] = branch
-                    logger.success("APP face-recognition ACTIVATED")
-                if app_index == 1:
-                    branch = PVBehavior(self.pipeline, self.srcm, self.perf)
-                    self.branch_manager[1] = branch
-                    logger.success("APP pv-behavior ACTIVATED")
-
-        for i in infer_ids:
-            tee_src_pad = self.tee[src.idx].get_request_pad('src_%u')
-            padname="sink_%u" % src.idx
-            logger.debug("Sinkpad padname: {}".format(padname))
-            ret = self.branch_manager[i].add_new_source(padname, tee_src_pad)
-            # tee_src_pad.link(sinkpad)
-
-        print(self.pipeline)
-        
-
-
         # add runtime infotmation
         src.rt_ctx = {'enable': True,
             'bin': source_bin,
@@ -399,29 +284,12 @@ class DSPipeline(abc.ABC):
         if not ret:
             raise Exception("add source to srm failed")
         
-        
-        
         if self.is_first_src:
             self.is_first_src = False
             logger.info("First source in pipeline, START whole pipeline")
-            
+
             state_return  = self.pipeline.set_state(Gst.State.PLAYING)
-
-
-
-        # if src.ptz_params:
-        #     if src.get_cam_type():
-        #         self.set_analytics(src.id, 2, src.get_multi_roi())
-        #     else:
-        #         if 'forward' in src.ptz_params[0]['coordinate']:
-        #             logger.info("Set nvanalytics plugin, type: Line-Crossing")
-        #             self.set_analytics(src.id, 1, src.ptz_params[0]['coordinate'])
-        #         elif 'recog' in src.ptz_params[0]['coordinate']:
-        #             logger.info("Set nvanalytics plugin, type: ROI")
-        #             self.set_analytics(src.id, 2, src.ptz_params[0]['coordinate'])
-
-        
-                    
+           
         return True, "success"
 
     @DSPD.d_acquire_lock
@@ -430,6 +298,7 @@ class DSPipeline(abc.ABC):
         :param id: str, source id
         :return: (bool, str, Source), result & message & deleted source
         """
+    
         ret, msg, src = self.srcm.get(id)
         if not ret:
             logger.warning("source: {} not exist.")
@@ -512,23 +381,10 @@ class DSPipeline(abc.ABC):
         if not ret or isinstance(src, list):
             return ret, msg
         source_bin = src.rt_ctx["bin"]
-        print("source_bin:",source_bin)
         state_return = source_bin.set_state(Gst.State.PLAYING)
-        print(state_return)
         if state_return == Gst.StateChangeReturn.FAILURE:
             return False, "source %s change state failure %s" % (src.id, state_return)
         
-        dst_folder = os.path.abspath(os.environ.get("GST_DEBUG_DUMP_DOT_DIR", ""))
-        os.makedirs(dst_folder, exist_ok=True)
-        graph_filename = "pipeline"
-        graph_filepath = os.path.join(dst_folder, graph_filename)
-        print(f"Saving pipeline in folder {dst_folder}")
-        Gst.debug_bin_to_dot_file(self.pipeline, Gst.DebugGraphDetails.ALL, graph_filename)
-        print("Files in dst folder:", os.listdir(dst_folder))
-        Gst.debug_bin_to_dot_file_with_ts(self.pipeline, Gst.DebugGraphDetails.ALL, graph_filename)
-        print("Files in dst folder:", os.listdir(dst_folder))
-        os.system(f"dot -Tpng -o {graph_filepath}.png {graph_filepath}.dot")
-
         src.rt_ctx['enable'] = True
         return True, "success"
 
@@ -711,3 +567,97 @@ class DSPipeline(abc.ABC):
         except Exception as e:
             print(e)
 
+    def _add_task(self, src):
+        # 接下来用tee来连接多个分支
+        infer_ids = src.get_infer_ids()
+        logger.debug("{} infer ids = {}.".format(src.id, infer_ids))
+
+        # Check validation
+        for i in infer_ids:
+            if i not in self.app_list:
+                logger.error("Unsupport App Type")
+                return False, "wrong app type"
+            
+        # if new app type, create a PARALLEL-INFER-BRANCH for it
+        for app_index in infer_ids:
+            if app_index not in self.branch_manager.keys():
+                if app_index == 0:
+                    branch = Face(self.pipeline, self.srcm, self.perf)
+                    self.branch_manager[app_index] = branch
+                    logger.success("APP face-recognition ACTIVATED")
+                if app_index == 1:
+                    branch = PVBehavior(self.pipeline, self.srcm, self.perf)
+                    self.branch_manager[app_index] = branch
+                    logger.success("APP pv-behavior ACTIVATED")
+
+        # add and link this branch to pipeline
+        for i in infer_ids:
+            tee_src_pad = self.tee[src.idx].get_request_pad('src_%u')
+            padname="sink_%u" % src.idx
+            logger.debug("Sinkpad padname: {}".format(padname))
+            ret = self.branch_manager[i].add_new_source(padname, tee_src_pad)
+
+    def bus_call_abs(self, bus, message): 
+        t = message.type
+        # TODO log here
+        if t == Gst.MessageType.EOS:
+            logger.error("收到流播放结束信号. end of stream")
+
+        elif t==Gst.MessageType.WARNING:
+            err, debug = message.parse_warning()
+            print("Warning: %s: %s\n" % (err, debug))
+        elif t == Gst.MessageType.ERROR:
+            
+            err, debug = message.parse_error()
+            logger.error("播放时发生错误. error: {}: {}".format(err, debug))
+            struct = str(message.get_structure())
+            search_index = re.search("source-bin-[0-9]{0,1}/", struct)
+            search_index = int(search_index[0].split('-')[2][:-1])
+
+            try:
+                err_id = self.srcm.get_id_by_idx(search_index)
+                # err_url = self.srcm.get_url_by_idx(search_index)
+                logger.warning("id: {} | encounters error: {}.".format(err_id, err))
+            except Exception as e:
+                logger.warning("source: {} didn't exist: {}".format(search_index, e))
+                return
+            
+            # logger.warning("id: {} | {} reach max reconnect retry. sending message...".format(err_id, err_url))
+            time_local = time.localtime(int(time.time()))
+            dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
+            msg = {"time": dt, "type": "normal", "id": str(err_id), "error":str(err), "debug": debug}
+            msg = json.dumps(msg).encode('utf-8')
+
+            if str(err).startswith("gst-resource-error-quark") or str(err).startswith("gst-stream-error-quark"):
+                # resource errors from 1 to 16
+                if str(err).endswith("(9)"):
+                    # handle_read_error()
+                    logger.warning("source: {} | error: {}".format(search_index, err))
+                else:
+                    self.producer.send('error', msg)
+                    logger.warning("id: {} will be deleted.".format(err_id))
+                    try:
+                        self.del_src(id=err_id)
+                    except Exception:
+                        logger.error("消息总线中: ERROR, 删除资源时发生错误. id: {} | encounters error: {} while delete.".format(err_id, err))
+
+        elif t == Gst.MessageType.ELEMENT:
+            struct = message.get_structure()
+            # Check for stream-eos message
+            if struct is not None and struct.has_name("stream-eos"):
+                parsed, stream_id = struct.get_uint("stream-id")
+                if parsed:
+                    # Set eos status of stream to True, to be deleted in delete-sources
+                    logger.info("Got EOS from stream-{}".format(stream_id))
+                    eos_id = self.srcm.get_id_by_idx(stream_id)
+                    if eos_id:
+                        time_local = time.localtime(int(time.time()))
+                        dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
+                        msg = {"time": dt, "type": "normal", "id": str(eos_id), "error":"EOS", "debug": ""}
+                        msg = json.dumps(msg).encode('utf-8')
+                        self.producer.send('error', msg)
+                        try:
+                            self.del_src(id=eos_id)
+                        except Exception:
+                            logger.error("消息总线中: EOS, 删除资源时发生错误. id: {} encounters e while delete.".format(eos_id))
+        return True 

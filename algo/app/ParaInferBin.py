@@ -1,6 +1,5 @@
 import abc
 
-
 class InferBin(abc.ABC):
     def __ini__():
         pass

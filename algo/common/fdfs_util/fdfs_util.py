@@ -3,8 +3,8 @@ import traceback
 from fdfs_client.client import *
 from loguru import logger
 import sys 
-sys.path.append("../../") 
-from ip_config.ipconfig import *
+sys.path.append("../../..") 
+from basic_config.config import *
 
 
 # todo------------需要完善的功能
@@ -14,7 +14,7 @@ class FastDfsUtil(object):
     """
 
     def __init__(self):
-        self.client_file = os.path.join(CLIENT_PATH, 'client.conf')
+        self.client_file = os.path.join(FastDFS_CLIENT_PATH, 'client.conf')
         logger.info("FastFDFS client init, config file path: {}".format(self.client_file))
         self.tracker_conf = get_tracker_conf(self.client_file)
         self.client = self.create_client()

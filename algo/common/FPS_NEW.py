@@ -42,19 +42,27 @@ class PERF_DATA:
     
 
 class PERF_DATA_SINGLE:
-    def __init__(self, num_streams=1, app_name=None):
+    def __init__(self, num_streams=1, app_name=None, srcm=None):
         self.perf_dict = {}
         self.all_stream_fps = {}
         self.app_name = app_name
+        self.srcm = srcm
         # self.hbdata = HBdata()
         for i in range(num_streams):
-            self.all_stream_fps["stream{0}".format(i)]=GETFPS(i)
+            self.all_stream_fps[i]=GETFPS(i)
 
     def perf_print_callback(self):
         self.perf_dict = {stream_index:stream.get_fps() for (stream_index, stream) in self.all_stream_fps.items()}
-        # print ("\n**PERF: ", self.perf_dict, "\n")
-        logger.warning("**{} PERF: \n {}".format(self.app_name, self.perf_dict))
+        output_signal = False
+        output_perf = dict()
+        for key, value in self.perf_dict.items():
+            if value:
+                output_signal = True
+                task_id = self.srcm.get_id_by_idx(key)
+                output_perf[task_id] = value
         # self.update_heartbeat(self.perf_dict)
+        if output_signal:
+            logger.warning("**{} PERF: \n {}".format(self.app_name, output_perf))
         return True
     
     def update_fps(self, stream_index):

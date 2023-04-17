@@ -1,6 +1,6 @@
 [streammux]
 batched_push_timeout = 2500
-batch_size = 8
+batch_size = 16
 gpu_id = 0
 live-source = 1
 width=3840

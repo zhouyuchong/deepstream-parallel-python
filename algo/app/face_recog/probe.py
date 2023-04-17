@@ -41,7 +41,6 @@ def pgie_sink_pad_buffer_probe(pad,info,u_data):
             
             drop_signal = True
             tmp_face_bbox = [obj_meta.rect_params.width, obj_meta.rect_params.height]
-            print(tmp_face_bbox)
 
             drop_signal = comp_replace(face_pool, tpool, frame_meta, obj_meta, tmp_face_bbox) and\
                             add_new_face(face_pool, tpool, frame_meta, obj_meta, tmp_face_bbox)
@@ -53,7 +52,7 @@ def pgie_sink_pad_buffer_probe(pad,info,u_data):
                 
             except StopIteration:
                 break
-        stream_index = "stream{0}".format(frame_meta.pad_index)
+        stream_index = frame_meta.pad_index
         perf_data.update_fps(stream_index)
         # Get frame rate through this probe
         try:
@@ -262,7 +261,6 @@ def add_new_face(face_pool, tpool, frame_meta, obj_meta, tmp_face_bbox):
 def get_face_feature(face_pool, obj_meta):
     if face_pool.id_exist(obj_meta.object_id):
         temp_face = face_pool.get_face_by_id(obj_meta.object_id)
-        print(temp_face.get_state())
         if temp_face.get_state() == FaceState.TOINFER:
             # print("try to get face feature of face-", obj_meta.object_id)
             l_user_meta = obj_meta.obj_user_meta_list

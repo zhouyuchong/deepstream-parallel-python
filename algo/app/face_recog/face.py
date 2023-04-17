@@ -29,13 +29,13 @@ class Face(InferBin):
         
         self.main_bin = "nvstreammux-streammux|nvinfer-pgie|nvtracker-tracker|nvvideoconvert-videoconvert|capsfilter|nvinfer-sgie|tee"
         ## sink_bin 暂时是写死的
-        self.sink_bin = "nvmsgconv-msgconv|nvmsgbroker-msgbroker|fakevideosink-sink"
+        self.sink_bin = "nvmsgconv-msgconv|nvmsgbroker-msgbroker|fakesink-sink"
         self.main_bin_elements = []
         self.sink_elements = []
         self.activated_pads_streammux = []
         self.face_pool = FacePool()
         self.t_pool = TerminatePool()
-        perf[self.app_name]= PERF_DATA_SINGLE(num_streams=16, app_name=self.app_name)
+        perf[self.app_name]= PERF_DATA_SINGLE(num_streams=16, app_name=self.app_name, srcm=srcm)
         self.perf_data = perf[self.app_name]
         self.make_elements()
         self.link_elements()

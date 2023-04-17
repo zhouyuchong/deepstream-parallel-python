@@ -26,19 +26,19 @@ class PVBehavior(InferBin):
         self.main_bin = "nvstreammux-streammux|nvinfer-pgie|nvtracker-tracker|nvvideoconvert-videoconvert|capsfilter|tee"
         # self.main_bin = "nvstreammux-streammux|nvinfer-pgie|nvtracker-tracker|nvvideoconvert-videoconvert|capsfilter|nvdsosd-osd|nvmultistreamtiler-tiler|tee"
         ## sink_bin 暂时是写死的
-        self.sink_bin = "nvmsgconv-msgconv|nvmsgbroker-msgbroker|fakevideosink-sink"
+        self.sink_bin = "nvmsgconv-msgconv|nvmsgbroker-msgbroker|fakesink-sink"
         # self.sink_bin = "nvmsgconv-msgconv|nvmsgbroker-msgbroker|nveglglessink-sink"
         
         self.main_bin_elements = []
         self.sink_elements = []
         self.activated_pads_streammux = []
 
-        # perf[self.app_name]= PERF_DATA_SINGLE(num_streams=16, app_name=self.app_name)
-        # self.perf_data = perf[self.app_name]
+        perf[self.app_name]= PERF_DATA_SINGLE(num_streams=16, app_name=self.app_name, srcm=srcm)
+        self.perf_data = perf[self.app_name]
         self.make_elements()
         self.link_elements()
         # self.set_streammux_null()
-        # self.add_probes()
+        self.add_probes()
 
 
         
@@ -122,14 +122,14 @@ class PVBehavior(InferBin):
         self.main_bin_elements[0].set_state(Gst.State.NULL)
 
 
-    # def add_probes(self):
-    #     user_data = [self.face_pool, self.t_pool, self.srcm, self.perf_data]
-    #     self.pgie_src_pad=self.main_bin_elements[4].get_static_pad("src")
-    #     if not self.pgie_src_pad:
-    #         sys.stderr.write(" Unable to get src pad \n")
-    #     else:
-    #         self.pgie_src_pad.add_probe(Gst.PadProbeType.BUFFER, pgie_sink_pad_buffer_probe, user_data)
-    #         GLib.timeout_add(5000, self.perf_data.perf_print_callback)
+    def add_probes(self):
+        user_data = [self.perf_data]
+        self.pgie_src_pad=self.main_bin_elements[4].get_static_pad("src")
+        if not self.pgie_src_pad:
+            sys.stderr.write(" Unable to get src pad \n")
+        else:
+            self.pgie_src_pad.add_probe(Gst.PadProbeType.BUFFER, PVEventProbe.pgie_src_pad_buffer_probe, user_data)
+            GLib.timeout_add(5000, self.perf_data.perf_print_callback)
 
     #     self.sgie_sink_pad = self.main_bin_elements[5].get_static_pad("src")
     #     if not self.sgie_sink_pad:

@@ -1,3 +1,4 @@
+from .pv_data import EVENT_INFO, EventData, EventFinished, backImages
 from .message import *
 
 class PVEventProbe:
@@ -6,6 +7,7 @@ class PVEventProbe:
         过滤person、car之外的检测框
         """
         # logger.debug("PVEventProbe | probe triggered.")
+        perf_data = u_data[0]
         gst_buffer = info.get_buffer()
         if not gst_buffer:
             logger.error("Unable to get GstBuffer ")
@@ -34,8 +36,7 @@ class PVEventProbe:
                     logger.error(e)
                     break
 
-            stream_index = "stream{0}".format(frame_meta.pad_index)
-            global perf_data
+            stream_index = frame_meta.pad_index
             perf_data.update_fps(stream_index)
             try:
                 l_frame = l_frame.next
