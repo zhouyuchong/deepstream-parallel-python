@@ -53,16 +53,17 @@ class PERF_DATA_SINGLE:
 
     def perf_print_callback(self):
         self.perf_dict = {stream_index:stream.get_fps() for (stream_index, stream) in self.all_stream_fps.items()}
-        output_signal = False
         output_perf = dict()
         for key, value in self.perf_dict.items():
-            if value:
-                output_signal = True
-                task_id = self.srcm.get_id_by_idx(key)
-                output_perf[task_id] = value
-        # self.update_heartbeat(self.perf_dict)
-        if output_signal:
-            logger.warning("**{} PERF: \n {}".format(self.app_name, output_perf))
+            task_id = self.srcm.get_id_by_idx(key)
+            if task_id:
+                if value:
+                    task_id = self.srcm.get_id_by_idx(key)
+                    if task_id:
+                        output_perf[task_id] = value
+        if not output_perf:
+            output_perf = "No data updates"
+        logger.warning("**PERF: \n {}: {}".format(self.app_name, output_perf))
         return True
     
     def update_fps(self, stream_index):

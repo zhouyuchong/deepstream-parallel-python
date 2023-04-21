@@ -1,5 +1,5 @@
 import time
-
+import json
 __all__ = ["Source", "Stream", "ParaInferStream"]
 
 
@@ -49,6 +49,10 @@ class ParaInferStream(Stream):
     
     def get_infer_ids(self):
         return self.apps
+    
+    def get_format_data(self):
+        data = {"app":self.apps, "id":self.id, "uri":self.uri}
+        return json.dumps(data)
 
 
 

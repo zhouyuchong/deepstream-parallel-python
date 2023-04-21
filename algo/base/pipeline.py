@@ -2,11 +2,6 @@ import abc
 import functools
 from threading import RLock, Thread, Lock
 from kafka import KafkaProducer, KafkaConsumer
-import time
-import re
-import json
-
-from loguru import logger
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -16,8 +11,10 @@ import sys
 sys.path.append('../')
 import basic_config
 from common.parse import *
+from common.ioFile import *
 from app import *
 from .srcm import SRCM
+from .bus_call_func import *
 
 
 
@@ -26,8 +23,8 @@ __all__ = ['DSPipeline']
 
 Gst.init(None)
 
-Gst.debug_set_active(True)
-Gst.debug_set_default_threshold(1)
+# Gst.debug_set_active(True)
+# Gst.debug_set_default_threshold(1)
 
 class DSPD:
     """
@@ -66,6 +63,7 @@ class DSPipeline(abc.ABC):
         self.pipeline_config = os.path.join(basic_config.PIPELINE_CLIENT_PATH, 'config_gst_pipeline.txt')
 
         self.tee = dict()
+        self.tee_pads = dict()
         self.srcm = None
         self.producer = None
         self.perf = dict()
@@ -160,18 +158,7 @@ class DSPipeline(abc.ABC):
         self.thread.start()
         
         ret = self.pipeline.set_state(Gst.State.NULL)        
-        # self.listener = HeartbeatListener(pipeline=self.pipeline, timethreshold=15, errorproducer=self.producer, 
-        #                 app_name=self.app_name, srcm=self.srcm)
-        # self.listener.start()
 
-        # if self._init_signal:
-        #     self._init_signal = False
-        #     time_local = time.localtime(int(time.time()))
-        #     dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-        #     msg = {"time": dt, "type": "update",  "id": self.app_name, "error":"get/recover src manager when init", "debug": ""}
-        #     msg = json.dumps(msg).encode('utf-8')
-        #     logger.info("Try to get/recover information of source manager at INIT stage.")
-        #     self.producer.send('error', msg)
 
         if ret == Gst.StateChangeReturn.SUCCESS:
             return True, "success, state %s" % ret
@@ -236,7 +223,7 @@ class DSPipeline(abc.ABC):
             return False, "exceed max source num %d" % self.max_source_num
 
         if self.srcm.exist(src.id):
-            logger.error("任务已经存在.")
+            logger.error("任务id已经存在.")
             return False, "source id %s exist" % src.id
         
         # make sure the pipeline is start
@@ -246,24 +233,13 @@ class DSPipeline(abc.ABC):
         
         self.srcm.alloc_index(src)
 
-        # create source bin
+        # create source bin and add it to pipeline
         source_bin, msg = self._create_uridecode_bin(src.idx, src.uri)
         if not source_bin:
             return False, msg
-        
         self.pipeline.add(source_bin)
-
-        # 添加一个tee在对应的demux后面，然后可以用tee来连接多个推理分支
-        tmp_tee = Gst.ElementFactory.make("tee", "demuxer-tee-{}".format(src.idx))
-        self.pipeline.add(tmp_tee)
-        # add gst-tees to tee-list so we can control and reach them later
-        self.tee[src.idx] = tmp_tee
-
-        padname = "src_%u" % src.idx
-        logger.info("Get {} of nvstreamdemux.".format(padname))
-        tmp_src_pad = self.demux_pad_list[src.idx]
-        sinkpad = tmp_tee.get_static_pad("sink")
-        tmp_src_pad.link(sinkpad)
+        
+        self._link_tee2demuxer(src=src)
         self._add_task(src=src)
         
         # add runtime infotmation
@@ -273,7 +249,6 @@ class DSPipeline(abc.ABC):
 
         # playing source
         state_return = source_bin.set_state(Gst.State.PLAYING)
-        # print("add set return :", state_return)
         if state_return == Gst.StateChangeReturn.SUCCESS:
             print("source state change  success")
         elif state_return == Gst.StateChangeReturn.FAILURE:
@@ -283,12 +258,14 @@ class DSPipeline(abc.ABC):
         ret, msg = self.srcm.add(src)
         if not ret:
             raise Exception("add source to srm failed")
+        write_source_to_file(src)
         
         if self.is_first_src:
             self.is_first_src = False
             logger.info("First source in pipeline, START whole pipeline")
 
             state_return  = self.pipeline.set_state(Gst.State.PLAYING)
+        
            
         return True, "success"
 
@@ -301,7 +278,7 @@ class DSPipeline(abc.ABC):
     
         ret, msg, src = self.srcm.get(id)
         if not ret:
-            logger.warning("source: {} not exist.")
+            logger.error("任务{}并不存在! source: {} not exist.".format(id, id))
             return ret, msg, None
         
         logger.info("will delete src:{} | {}".format(src.idx, src.uri))
@@ -376,6 +353,7 @@ class DSPipeline(abc.ABC):
         """
         
         ret, msg, src = self.srcm.get(id=id)
+        logger.warning("{}, {}, {}".format(ret, msg, src))
         logger.debug("play source: {} | {}".format(id, ret))
         # print("src:", src)
         if not ret or isinstance(src, list):
@@ -568,6 +546,11 @@ class DSPipeline(abc.ABC):
             print(e)
 
     def _add_task(self, src):
+        '''
+        parse a single source and create/add it to corresponding app branch
+        :param: Source
+        :return: None
+        '''
         # 接下来用tee来连接多个分支
         infer_ids = src.get_infer_ids()
         logger.debug("{} infer ids = {}.".format(src.id, infer_ids))
@@ -599,65 +582,37 @@ class DSPipeline(abc.ABC):
 
     def bus_call_abs(self, bus, message): 
         t = message.type
-        # TODO log here
+        gst_signal = True
+        err_id = None
         if t == Gst.MessageType.EOS:
             logger.error("收到流播放结束信号. end of stream")
-
         elif t==Gst.MessageType.WARNING:
             err, debug = message.parse_warning()
-            print("Warning: %s: %s\n" % (err, debug))
+            logger.warning("{}:{}".format(err, debug))
         elif t == Gst.MessageType.ERROR:
-            
-            err, debug = message.parse_error()
-            logger.error("播放时发生错误. error: {}: {}".format(err, debug))
-            struct = str(message.get_structure())
-            search_index = re.search("source-bin-[0-9]{0,1}/", struct)
-            search_index = int(search_index[0].split('-')[2][:-1])
-
-            try:
-                err_id = self.srcm.get_id_by_idx(search_index)
-                # err_url = self.srcm.get_url_by_idx(search_index)
-                logger.warning("id: {} | encounters error: {}.".format(err_id, err))
-            except Exception as e:
-                logger.warning("source: {} didn't exist: {}".format(search_index, e))
-                return
-            
-            # logger.warning("id: {} | {} reach max reconnect retry. sending message...".format(err_id, err_url))
-            time_local = time.localtime(int(time.time()))
-            dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-            msg = {"time": dt, "type": "normal", "id": str(err_id), "error":str(err), "debug": debug}
-            msg = json.dumps(msg).encode('utf-8')
-
-            if str(err).startswith("gst-resource-error-quark") or str(err).startswith("gst-stream-error-quark"):
-                # resource errors from 1 to 16
-                if str(err).endswith("(9)"):
-                    # handle_read_error()
-                    logger.warning("source: {} | error: {}".format(search_index, err))
-                else:
-                    self.producer.send('error', msg)
-                    logger.warning("id: {} will be deleted.".format(err_id))
-                    try:
-                        self.del_src(id=err_id)
-                    except Exception:
-                        logger.error("消息总线中: ERROR, 删除资源时发生错误. id: {} | encounters error: {} while delete.".format(err_id, err))
-
+            gst_signal, err_id = error_parse_call(message=message, srcm=self.srcm, producer=self.producer)
         elif t == Gst.MessageType.ELEMENT:
-            struct = message.get_structure()
-            # Check for stream-eos message
-            if struct is not None and struct.has_name("stream-eos"):
-                parsed, stream_id = struct.get_uint("stream-id")
-                if parsed:
-                    # Set eos status of stream to True, to be deleted in delete-sources
-                    logger.info("Got EOS from stream-{}".format(stream_id))
-                    eos_id = self.srcm.get_id_by_idx(stream_id)
-                    if eos_id:
-                        time_local = time.localtime(int(time.time()))
-                        dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-                        msg = {"time": dt, "type": "normal", "id": str(eos_id), "error":"EOS", "debug": ""}
-                        msg = json.dumps(msg).encode('utf-8')
-                        self.producer.send('error', msg)
-                        try:
-                            self.del_src(id=eos_id)
-                        except Exception:
-                            logger.error("消息总线中: EOS, 删除资源时发生错误. id: {} encounters e while delete.".format(eos_id))
-        return True 
+            gst_signal, err_id = eos_parse_call(message=message, srcm=self.srcm, producer=self.producer)
+
+        if err_id:
+            self.del_src(id=err_id)
+            
+        return gst_signal 
+    
+    def _link_tee2demuxer(self, src):
+        '''
+        create a gst-tee and link it to nvstreamdemuxer
+        :param: Source
+        :return: None
+        '''
+        if src.idx not in self.tee.keys():
+        # 添加一个tee在对应的demux后面，然后可以用tee来连接多个推理分支
+            tmp_tee = Gst.ElementFactory.make("tee", "demuxer-tee-{}".format(src.idx))
+            self.pipeline.add(tmp_tee)
+            # add gst-tees to tee-list so we can control and reach them later
+            self.tee[src.idx] = tmp_tee
+            sinkpad = tmp_tee.get_static_pad("sink")
+            padname = "src_%u" % src.idx
+            logger.info("Get {} of nvstreamdemux.".format(padname))
+            tmp_src_pad = self.demux_pad_list[src.idx] 
+            tmp_src_pad.link(sinkpad)

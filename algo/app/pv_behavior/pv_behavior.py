@@ -148,19 +148,19 @@ class PVBehavior(InferBin):
         
 
     def add_new_source(self, padname, srcpad):
-        if padname not in self.activated_pads_streammux:
-            self.activated_pads_streammux.append(padname)
-            streammux_sink_pad = self.main_bin_elements[0].get_request_pad(padname)
-            srcpad.link(streammux_sink_pad)
-        else:
-            streammux_sink_pad = self.main_bin_elements[0].get_static_pad(padname)
-            streammux_sink_pad.send_event(Gst.Event.new_flush_start())
+        # if padname not in self.activated_pads_streammux:
+        self.activated_pads_streammux.append(padname)
+        streammux_sink_pad = self.main_bin_elements[0].get_request_pad(padname)
+        srcpad.link(streammux_sink_pad)
+        # else:
+        #     streammux_sink_pad = self.main_bin_elements[0].get_static_pad(padname)
+        #     streammux_sink_pad.send_event(Gst.Event.new_flush_start())
     
     def release_streammux(self, pad_name):
         sinkpad = self.main_bin_elements[0].get_static_pad(pad_name)
         if sinkpad is not None:
             sinkpad.send_event(Gst.Event.new_flush_stop(False))
-            # self.main_bin_elements[0].release_request_pad(sinkpad)
+            self.main_bin_elements[0].release_request_pad(sinkpad)
         logger.info("Branch {} streammux release finished.".format(self.app_name))
         # return sinkpad
     

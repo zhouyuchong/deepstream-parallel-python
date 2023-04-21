@@ -27,7 +27,7 @@ def create_element(app_name, element_type, element_name=None):
     if not gstreamer_element:
         logger.error("Unable to create {}.".format(temp_name))
         return False, None, None
-    logger.info("Plugin {} created.".format(temp_name))
+    logger.debug("Plugin {} created.".format(temp_name))
     
     return True, gstreamer_element
 
