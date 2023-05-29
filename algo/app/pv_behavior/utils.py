@@ -3,7 +3,7 @@ import re
 
 import numpy as np
 
-from kbds.app.pedestrian_vehicle import config
+import config 
 
 # print(os.listdir())
 # path = '../../configs/lpr/config_nvdsanalytics.txt'
@@ -194,6 +194,10 @@ class AnaInfo:
     def __init__(self, roi=None, dir=None):
         self.roi = roi
         self.dir = dir
+
+def long_to_uint64(l):
+    value = ctypes.c_uint64(l & 0xffffffffffffffff).value
+    return value
 
 if __name__ == "__main__":
     ptz_params = [

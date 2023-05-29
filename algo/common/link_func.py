@@ -36,38 +36,49 @@ def set_element_property(config_path, element, element_name, addition_path=None)
     config.read(config_path)
     config.sections()
 
-    for key in config[element_name]:
-        if 'gie' in element_name:
-            if key == "config-file-path":
-                element.set_property(key, addition_path)
+    try:
+        for key in config[element_name]:
+            if 'gie' in element_name:
+                if key == "config-file-path":
+                    element.set_property(key, addition_path)
 
-        elif element_name == 'capsfilter':
-            if key == 'caps':
-                value = Gst.Caps.from_string("video/x-raw(memory:NVMM), format=RGBA")
-                element.set_property(key, value)
+            elif 'analytics' in element_name:
+                if key == "config-file":
+                    element.set_property(key, addition_path)
 
-        elif element_name == 'msgbroker':
-            if key == 'proto-lib':
+            elif element_name == 'capsfilter':
+                if key == 'caps':
+                    value = Gst.Caps.from_string("video/x-raw(memory:NVMM), format=RGBA")
+                    element.set_property(key, value)
+
+            elif element_name == 'msgbroker':
+                if key == 'proto-lib':
+                    path = config.get(element_name, key)
+                    element.set_property(key, path)
+                if key == 'config':
+                    element.set_property(key, addition_path)
+                if key == 'conn-str':
+                    path = config.get(element_name, key)
+                    element.set_property(key, path)
+
+            elif element_name == 'msgconv':
+                if key == 'config':
+                    element.set_property(key, addition_path)
+                else:
+                    temp_property = config.getint(element_name, key)
+                    element.set_property(key, temp_property)
+
+            elif 'path' in key or 'file' in key:
                 path = config.get(element_name, key)
                 element.set_property(key, path)
-            if key == 'config':
-                element.set_property(key, addition_path)
-            if key == 'conn-str':
-                path = config.get(element_name, key)
-                element.set_property(key, path)
-
-        elif element_name == 'msgconv':
-            if key == 'config':
-                element.set_property(key, addition_path)
+            
             else:
                 temp_property = config.getint(element_name, key)
                 element.set_property(key, temp_property)
 
-        elif 'path' in key or 'file' in key:
-            path = config.get(element_name, key)
-            element.set_property(key, path)
-        
-        else:
-            temp_property = config.getint(element_name, key)
-            element.set_property(key, temp_property)
+        return True
+
+    except Exception as e:
+        logger.warning("No config for {}.".format(e))
+        return True
 

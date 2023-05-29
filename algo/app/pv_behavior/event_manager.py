@@ -15,7 +15,8 @@ from abc import ABC, abstractmethod
 import cv2
 from loguru import logger
 import sys
-sys.path.append('../')
+sys.path.append('../../')
+
 from common.fdfs_util.fdfs_util import FastDfsUtil
 from .pv_data import GatherData, IncreaseData, LingerData, RetrogradeData, SpeedingData, SpeedingNumData
 from .utils import AnaInfo
@@ -39,9 +40,9 @@ class Event(ABC, Thread):
         frame_copy = img
         frame_copy = cv2.cvtColor(frame_copy, cv2.COLOR_RGBA2BGR)
 
-        img_name = 'pv-images/{}.png'.format(count_id)
-        count_id += 1
-        cv2.imwrite(img=frame_copy, filename=img_name)
+        # img_name = '{}.png'.format(count_id)
+        # count_id += 1
+        # cv2.imwrite(img=frame_copy, filename=img_name)
 
         success, encoded_image = cv2.imencode(".png", frame_copy)
         #将数组转为bytes
@@ -86,6 +87,7 @@ class GatherEvent(Event):
         logger.debug("GatherEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 continue
 
             event_data = self.buffer.popleft()
@@ -160,6 +162,7 @@ class IncreaseEvent(Event):
         logger.debug("IncreaseEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 continue
 
             event_data = self.buffer.popleft()
@@ -232,6 +235,7 @@ class LingerEvent(Event):
         logger.debug("LingerEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 # logger.info("LingerEvent | buffer empty.")
                 continue
 
@@ -313,6 +317,7 @@ class RetrogradeEvent(Event):
         logger.debug("RetrogradeEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 continue
 
             event_data = self.buffer.popleft()
@@ -387,6 +392,7 @@ class SpeedingEvent(Event):
         logger.debug("SpeedignEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 continue
 
             event_data = self.buffer.popleft()
@@ -464,6 +470,7 @@ class SpeedingNumEvent(Event):
         logger.debug("SpeedignNumEvent | start.")
         while self._active:
             if not self.buffer:
+                time.sleep(1)
                 continue
 
             event_data = self.buffer.popleft()
@@ -511,9 +518,8 @@ class SpeedingNumEvent(Event):
     def process_func(self, image, process_data, frame_number):
         for data in process_data:
             track_id, class_id, detect_bbox, analytic_info, frame_num = data
-            if frame_num >= frame_number-1 and frame_num <= frame_number+1:
-                cv2.rectangle(image, (int(detect_bbox[0]), int(detect_bbox[1])),
-                            (int(detect_bbox[2]), int(detect_bbox[3])), (0, 0, 255), 2)
+            cv2.rectangle(image, (int(detect_bbox[0]), int(detect_bbox[1])),
+                            (int(detect_bbox[2]), int(detect_bbox[3])), (255, 0, 0), 2)
             # cv2.putText(image, str(track_id), (detect_bbox[0], detect_bbox[1] - 10),
             #             cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
         img_url = self.upload_img(image)

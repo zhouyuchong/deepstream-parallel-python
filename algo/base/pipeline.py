@@ -9,9 +9,11 @@ from gi.repository import Gst, GLib
 
 import sys
 sys.path.append('../')
+
 import basic_config
 from common.parse import *
 from common.ioFile import *
+from common.constant import *
 from app import *
 from .srcm import SRCM
 from .bus_call_func import *
@@ -397,16 +399,19 @@ class DSPipeline(abc.ABC):
         return False, "unknown source"
 
     @DSPD.d_acquire_lock
-    def set_analytics(self, id=0, type=0, data=None, path=None):
+    def set_analytics(self, appid=0, id=None, type=0, data=None, path=None):
         """
         :param id:str, source id
         :param type: enum, analytics type
         :param data: dict, line crossing data
         :return: (bool, str), result & path of analytics
         """
-        if path:
-            self.nvanalytics.set_property("config-file", path)
-            return True, self.nvanalytics.get_property("config-file")
+        # if path:
+        #     self.branch_manager[id].set_analytics(path)
+            # self.nvanalytics.set_property("config-file", path)
+            # return True, self.nvanalytics.get_property("config-file")
+
+        analytics_file_path = self.branch_manager[appid].get_analytics_file_path()
         ret, msg, src = self.srcm.get(id)
         if not ret:
             return ret, msg
@@ -414,31 +419,29 @@ class DSPipeline(abc.ABC):
             coors = value.split(';')            
             for i in range(len(coors)):
                 if i == 0:
-                    coors[i] = int(float(coors[i]) * constant.MUXER_OUTPUT_WIDTH) 
+                    coors[i] = int(float(coors[i]) * MUXER_OUTPUT_WIDTH) 
                     continue
                 elif i == 1:
-                    coors[i] = int(float(coors[i]) * constant.MUXER_OUTPUT_HEIGHT) 
+                    coors[i] = int(float(coors[i]) * MUXER_OUTPUT_HEIGHT) 
                     continue
                 elif i%2 == 0:
-                    coors[i] = int(float(coors[i]) * constant.MUXER_OUTPUT_WIDTH) 
+                    coors[i] = int(float(coors[i]) * MUXER_OUTPUT_WIDTH) 
                 else:
-                    coors[i] = int(float(coors[i]) * constant.MUXER_OUTPUT_HEIGHT) 
+                    coors[i] = int(float(coors[i]) * MUXER_OUTPUT_HEIGHT) 
             coors = [str(coor) for coor in coors]
             semicolon = ';'
             coors = semicolon.join(coors)
             data[key] = coors
         idx = src.get_index()
         if type == 1:
-            if modify_analytics_crossingline(constant.ANALYTICS_CONFIG_FILE, max_source_number=self.max_source_num, index=idx, enable=1, extended=0, mode='balanced', class_id=2, **data):
-                self.nvanalytics.set_property("config-file", constant.ANALYTICS_CONFIG_FILE)      
-            return True, self.nvanalytics.get_property("config-file")
+            if modify_analytics_crossingline(analytics_file_path, max_source_number=self.max_source_num, index=idx, enable=1, extended=0, mode='balanced', class_id=2, **data):
+                self.branch_manager[appid].set_analytics(analytics_file_path)      
         elif type == 2:
             # if self.is_ball:
             #     tmp_thread = self.thread_m.get_cam(source_id=idx)
             #     tmp_thread.set_analytics_dict(data)
-            if modify_analytics_ROI(constant.ANALYTICS_CONFIG_FILE, max_source_number=self.max_source_num, index=idx, enable=1, inverse_roi=0, class_id=-1, **data):
-                self.nvanalytics.set_property("config-file", constant.ANALYTICS_CONFIG_FILE)      
-            return True, self.nvanalytics.get_property("config-file")
+            if modify_analytics_ROI(analytics_file_path, max_source_number=self.max_source_num, index=idx, enable=1, inverse_roi=0, class_id=-1, **data):
+                self.branch_manager[appid].set_analytics(analytics_file_path)      
         else:
             return False, "None"
         

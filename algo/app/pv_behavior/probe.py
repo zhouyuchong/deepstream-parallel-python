@@ -1,5 +1,9 @@
 from .pv_data import EVENT_INFO, EventData, EventFinished, backImages
+from .utils import *
 from .message import *
+
+event_finished = EventFinished(max_num=50)
+bg_images = backImages(max_len=10)
 
 class PVEventProbe:
     def pgie_src_pad_buffer_probe(pad, info, u_data):
@@ -29,7 +33,7 @@ class PVEventProbe:
                     obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
                     # logger.debug("PVEventProbe | class_id:{} confidence:{}".format(obj_meta.class_id, obj_meta.confidence))
                     l_obj = l_obj.next
-                    if obj_meta.class_id not in DETECT_OBJECTS or obj_meta.confidence < 0.85:
+                    if obj_meta.class_id not in DETECT_OBJECTS or obj_meta.confidence < 0.1:
                         pyds.nvds_remove_obj_meta_from_frame(frame_meta, obj_meta)
                     
                 except StopIteration as e:
@@ -132,11 +136,11 @@ class PVEventProbe:
                                                     analytic_info=anainfo,
                                                     frame_num=frame_number)
                             event_data.add_event(event_info)
-                            # logger.debug("source_id: {} | track_id:{}, class_id:{}\n bbox:[{},{},{},{}]".format(
-                            #     frame_meta.source_id, obj_meta.object_id, obj_meta.class_id,
-                            #     obj_meta.rect_params.left, obj_meta.rect_params.top,
-                            #     obj_meta.rect_params.width, obj_meta.rect_params.height
-                            # ))
+                            logger.debug("source_id: {} | track_id:{}, class_id:{}\n bbox:[{},{},{},{}]".format(
+                                frame_meta.source_id, obj_meta.object_id, obj_meta.class_id,
+                                obj_meta.rect_params.left, obj_meta.rect_params.top,
+                                obj_meta.rect_params.width, obj_meta.rect_params.height
+                            ))
 
                         except StopIteration as e:
                             logger.error(e)
@@ -296,6 +300,7 @@ class PVEventProbe:
                 break
         return Gst.PadProbeReturn.OK
     
+
     @classmethod
     def get_source_by_index(cls, srcm, source_idx):
         is_source_enable = True
@@ -307,3 +312,13 @@ class PVEventProbe:
                 return True, source
         return False, None
 
+def get_frame(gst_buffer, frame_meta):
+    n_frame = pyds.get_nvds_buf_surface(hash(gst_buffer), frame_meta.batch_id)
+    # convert python array into numpy array format in the copy mode.
+    # n_frame = None
+    frame_copy = np.array(n_frame, copy=True, order='C')
+    # convert the array into cv2 default color format
+    # frame_copy = cv2.cvtColor(frame_copy, cv2.COLOR_RGBA2BGRA)
+    # img_path = "frames/{}".format(path)
+    # cv2.imwrite(img_path, frame_copy)
+    return frame_copy

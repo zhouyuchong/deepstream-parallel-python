@@ -5,6 +5,7 @@ gpu_id = 0
 live-source = 1
 width=3840
 height=2160
+nvbuf-memory-type=3
 
 [pgie]
 config-file-path = default
@@ -17,7 +18,7 @@ caps = default
 
 [videoconvert]
 gpu_id = 0
-nvbuf-memory-type = 0
+nvbuf-memory-type = 3
 
 [osd]
 gpu_id = 0

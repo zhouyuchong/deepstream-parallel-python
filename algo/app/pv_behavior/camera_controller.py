@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 
 from loguru import logger
 
-from kbds.app.pedestrian_vehicle.ptz_controller import PTZController
+from .ptz_controller import PTZController
 
 
 class MoveState:

@@ -16,15 +16,18 @@ import re
 
 from loguru import logger
 
-from kbds.core.source import Stream
-from kbds.app.pedestrian_vehicle.utils import modify_analytics_roi, modify_analytics_dir
-from kbds.app.pedestrian_vehicle.camera_controller import CameraController
-from kbds.app.pedestrian_vehicle.event_manager import EventManager, LingerEvent
-from kbds.app.pedestrian_vehicle import config
+import sys
+sys.path.append('../../')
+from base.source import *
+
+# from kbds.app.pedestrian_vehicle.utils import modify_analytics_roi, modify_analytics_dir
+from .camera_controller import CameraController
+from .event_manager import EventManager, LingerEvent
+# from kbds.app.pedestrian_vehicle import config
 
 
-class GeneralCamera(Stream):
-    def __init__(self, id, uri, **kwargs) -> None:
+class GeneralCamera(ParaInferStream):
+    def __init__(self, id, uri, apps, **kwargs) -> None:
         """
         :param id: str, source id
         :param uri: str, stream uri
@@ -32,7 +35,7 @@ class GeneralCamera(Stream):
             username: str, camera username
             password: str, camera password
         """
-        super().__init__(id, uri, **kwargs)
+        super().__init__(id, uri, apps, **kwargs)
         
         reg = re.compile('^(?P<uri_mode>[^ ]*)://(?P<user>[^ ]*):(?P<passwd>[^"]*)@'
                          '(?P<ip>[^ ]*):(?P<port>[^ ]*)/(?P<uri_head>[^"]*)')
@@ -74,15 +77,15 @@ class GeneralCamera(Stream):
         # logger.debug("GeneralCamera id:{} pop events.".format(self.id))
         return self._manager.pop_events()
 
-    def update_ptz_params(self, ptz_params):
-        if [True for i in ptz_params if 'coordinate' in i]:
-            modify_analytics_roi(config.ANALYTICS_CONFIG_FILE, config.MAX_NUM_SOURCES,
-                                 self.idx, 1, ptz_params, 0)
-            logger.debug("GeneralCamera id:{} modify_analytics_roi done.".format(self.id))
-        if [True for i in ptz_params if 'direction' in i]:
-            modify_analytics_dir(config.ANALYTICS_CONFIG_FILE, config.MAX_NUM_SOURCES,
-                                 self.idx, 1, ptz_params)
-            logger.debug("GeneralCamera id:{} modify_analytics_dir done.".format(self.id))
-        return config.ANALYTICS_CONFIG_FILE
+    # def update_ptz_params(self, ptz_params):
+    #     if [True for i in ptz_params if 'coordinate' in i]:
+    #         modify_analytics_roi(config.ANALYTICS_CONFIG_FILE, config.MAX_NUM_SOURCES,
+    #                              self.idx, 1, ptz_params, 0)
+    #         logger.debug("GeneralCamera id:{} modify_analytics_roi done.".format(self.id))
+    #     if [True for i in ptz_params if 'direction' in i]:
+    #         modify_analytics_dir(config.ANALYTICS_CONFIG_FILE, config.MAX_NUM_SOURCES,
+    #                              self.idx, 1, ptz_params)
+    #         logger.debug("GeneralCamera id:{} modify_analytics_dir done.".format(self.id))
+    #     return config.ANALYTICS_CONFIG_FILE
 
 

@@ -17,27 +17,31 @@ def error_parse_call(message, srcm, producer):
     elif 'Failed to connect. (Generic error)' in str(debug):
         logger.warning("Uridecodebin failed to connect to server. Could be ignored?")
         return True, None
+    elif 'unable to connect to broker library' in str(debug):
+        logger.error("\n无法连接kafka\n{}".format(debug))
+        return True, None
+
     else:
-        logger.error("Unknown error, will delete and send message.")
+        logger.error("Unknown error, will delete and send message: {} | {}".format(err, debug))
 
-        struct = str(message.get_structure())
-        search_index = re.search("source-bin-[0-9]{0,1}/", struct)
-        search_index = int(search_index[0].split('-')[2][:-1])
+        # struct = str(message.get_structure())
+        # search_index = re.search("source-bin-[0-9]{0,1}/", struct)
+        # search_index = int(search_index[0].split('-')[2][:-1])
 
-        try:
-            err_id = srcm.get_id_by_idx(search_index)
-            # err_url = self.srcm.get_url_by_idx(search_index)
-            logger.warning("id: {} | encounters error: {}.".format(err_id, err))
-        except Exception as e:
-            logger.warning("source: {} didn't exist: {}".format(search_index, e))
-            return
+        # try:
+        #     err_id = srcm.get_id_by_idx(search_index)
+        #     # err_url = self.srcm.get_url_by_idx(search_index)
+        #     logger.warning("id: {} | encounters error: {}.".format(err_id, err))
+        # except Exception as e:
+        #     logger.warning("source: {} didn't exist: {}".format(search_index, e))
+        #     return
         
-        time_local = time.localtime(int(time.time()))
-        dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
-        msg = {"time": dt, "type": "normal", "id": str(err_id), "error":str(err), "debug": debug}
-        msg = json.dumps(msg).encode('utf-8')
-        producer.send('errsor', msg)
-        return True, err_id
+        # time_local = time.localtime(int(time.time()))
+        # dt = time.strftime("%Y-%m-%d %H:%M:%S",time_local)
+        # msg = {"time": dt, "type": "normal", "id": str(err_id), "error":str(err), "debug": debug}
+        # msg = json.dumps(msg).encode('utf-8')
+        # producer.send('errsor', msg)
+        return True, None
 
         # if str(err).startswith("gst-resource-error-quark") or str(err).startswith("gst-stream-error-quark"):
         #     # resource errors from 1 to 16

@@ -112,10 +112,11 @@ class IncreaseData:
 class LingerData:
     def __init__(self, linger_time_thresh, roi_polyline):
         self.linger_time_thresh = linger_time_thresh
-        self.inside_rad = self.get_inside_rad(roi_polyline)
+        # self.inside_rad = self.get_inside_rad(roi_polyline)
         self.track_dict = dict()
         self.history = dict()  # 上一次巡检目标位置记录
-        logger.info("LingerData Init: linger_time_thresh:{} | {}".format(self.linger_time_thresh, self.inside_rad))
+        self.width_rate = 1.5
+        logger.info("LingerData Init: linger_time_thresh:{}".format(self.linger_time_thresh))
 
     def clean(self):
         self.track_dict.clear()
@@ -123,19 +124,20 @@ class LingerData:
     def add_data(self, track_id, detect_bbox, catch_time, is_in_roi):
         # logger.debug("add data: {} {} {}".format(track_id, detect_bbox, catch_time))
         x1, y1, x2, y2 = detect_bbox
+        person_width = x2 - x1
         foot_loc = ((x1 + x2) / 2.0, y2)
 
         if (track_id not in self.track_dict) or (not is_in_roi):
             # logger.debug("track id: {} | {} | {}".format(track_id, self.track_dict, is_in_roi))
-            # [开始时间、结束时间、初始位置、是否已推送]
-            self.track_dict[track_id] = [catch_time, catch_time, foot_loc, False]
+            # [开始时间、结束时间、初始位置、是否已推送、行人宽度]
+            self.track_dict[track_id] = [catch_time, catch_time, foot_loc, False, person_width]
 
         # foot_loc与初始位置距离
         # 如果距离小于阈值更新捕获结束时间
 
         dist_with_origin = self.l2_distance(foot_loc, self.track_dict[track_id][2])
         # logger.debug("dist width: {} | {} | {} | {}".format(dist_with_origin, foot_loc, self.track_dict[track_id][2], track_id))
-        if dist_with_origin < self.inside_rad:
+        if dist_with_origin < person_width*self.width_rate:
             self.track_dict[track_id][1] = catch_time
 
         # 历史数据清理
@@ -148,16 +150,17 @@ class LingerData:
     def event_trigger(self):
         ids_triggered = []
         for track_id, linger_data in self.track_dict.items():
-            time_start, time_end, foot_loc, is_pushed = linger_data
+            time_start, time_end, foot_loc, is_pushed, person_width = linger_data
             dist_history = self.min_distance_with_history(foot_loc)
             # logger.debug("trigger : {} {} {}".format(time_end, time_start, dist_history))
             if (time_end - time_start > self.linger_time_thresh) and (not is_pushed) and \
-                    dist_history > self.inside_rad:
+                    dist_history > person_width*self.width_rate:
                 ids_triggered.append(track_id)
                 linger_data[3] = True
                 self.history[time.time()] = foot_loc
         return ids_triggered
 
+    '''
     @staticmethod
     def get_inside_rad(polyline):
         """
@@ -166,7 +169,7 @@ class LingerData:
         @return:
         """
         region = np.reshape([float(i) for i in polyline.split(';')], (-1, 2))
-        region = region*np.array([MUXER_OUTPUT_WIDTH, MUXER_OUTPUT_HEIGHT])
+        region = region*np.array([config.MUXER_OUTPUT_WIDTH, config.MUXER_OUTPUT_HEIGHT])
         logger.debug("region: {}".format(region))
         width_tmp, height_tmp = np.max(region, axis=0).astype(np.int32)
         width_tmp += 1
@@ -179,6 +182,7 @@ class LingerData:
                 raw_dist[i, j] = cv2.pointPolygonTest(contours, (j, i), True)
         _, max_val, _, max_dist_pt = cv2.minMaxLoc(raw_dist)
         return max_val
+    '''
 
     def min_distance_with_history(self, foot_loc):
         dist_min = min([self.l2_distance(foot_loc, foot_mark) for mark_time, foot_mark in self.history.items()]) \
@@ -262,7 +266,7 @@ class SpeedingData:
             time_start, loc_start = track_data.popleft()
             time_end, loc_end = track_data.pop()
             current_speed = self.cal_distance(loc_end, loc_start) / (time_end - time_start + 1e-6)
-            # logger.debug("speed: {} | {} | {} {} -> {} {}".format(track_id, current_speed, loc_start, time_start, loc_end, time_end))
+            logger.debug("speed| id:{} | speed:{:.2f} | {} {} -> {} {}".format(track_id, current_speed, loc_start, time_start, loc_end, time_end))
             # print(loc_end, loc_start, self.cal_distance(loc_end, loc_start), time_start, time_end, current_speed, self.speed_thresh)
             if current_speed < self.speed_thresh:
                 linger_data[3] = 0
@@ -287,7 +291,7 @@ class SpeedingData:
             cali_bbox = np.array(calibration_data[:8]).reshape(
                 (-1, 2)).astype(np.float32)
 
-            L1, L2 = calibration_data[8:]
+            L1, L2 = calibration_data[10:]
             target_bbox = np.array([[0.0, 0.0],
                                     [L1, 0.0],
                                     [L1, L2],
@@ -296,8 +300,8 @@ class SpeedingData:
             tmp_pts = []
             calibration_extra_bbox = np.array(calibration_extra_data[:16]).reshape(
                 (-1, 2)).astype(np.float32)
-            L1, L2, H = calibration_extra_data[20:]
-            height_ratio = self.target_height/ H
+            L1, L2, H = calibration_extra_data[16:]
+            height_ratio = 1.5/ H
 
             for i in range(4):
                 p0 = calibration_extra_bbox[2*i]
@@ -308,6 +312,7 @@ class SpeedingData:
             cali_bbox = np.array(tmp_pts).astype(np.float32)
             target_bbox = np.array([[0.0, 0.0], [L1, 0.0], [L1, L2], [0.0, L2]]).astype(np.float32)
 
+        logger.debug("SpeedingData cali_bbox:{} target_bbox:{}".format(cali_bbox, target_bbox))
         cali_bbox[:, 0] *= MUXER_OUTPUT_WIDTH
         cali_bbox[:, 1] *= MUXER_OUTPUT_HEIGHT
         trans_matrix = cv2.getPerspectiveTransform(cali_bbox, target_bbox)
@@ -373,6 +378,8 @@ class SpeedingNumData:
             time_start, loc_start = track_data.popleft()
             time_end, loc_end = track_data.pop()
             current_speed = self.cal_distance(loc_end, loc_start) / (time_end - time_start + 1e-6)
+            logger.debug("speednum| id:{} | speed:{:.2f} | {} {} -> {} {}".format(
+                track_id, current_speed, loc_start, time_start, loc_end, time_end))
             if current_speed < self.speed_thresh:
                 linger_data[3] = 0
                 continue
@@ -398,7 +405,7 @@ class SpeedingNumData:
             cali_bbox = np.array(calibration_data[:8]).reshape(
                 (-1, 2)).astype(np.float32)
 
-            L1, L2 = calibration_data[8:]
+            L1, L2 = calibration_data[10:]
             target_bbox = np.array([[0.0, 0.0],
                                     [L1, 0.0],
                                     [L1, L2],
@@ -407,8 +414,8 @@ class SpeedingNumData:
             tmp_pts = []
             calibration_extra_bbox = np.array(calibration_extra_data[:16]).reshape(
                 (-1, 2)).astype(np.float32)
-            L1, L2, H = calibration_extra_data[20:]
-            height_ratio = 1.7/H
+            L1, L2, H = calibration_extra_data[16:]
+            height_ratio = 1.5/H
 
             for i in range(4):
                 p0 = calibration_extra_bbox[2*i]
@@ -419,7 +426,8 @@ class SpeedingNumData:
             cali_bbox = np.array(tmp_pts).astype(np.float32)
             target_bbox = np.array(
                 [[0.0, 0.0], [L1, 0.0], [L1, L2], [0.0, L2]]).astype(np.float32)
-
+        logger.debug("SpeedingNumData cali_bbox:{} target_bbox:{}".format(
+            cali_bbox, target_bbox))
         cali_bbox[:, 0] *= MUXER_OUTPUT_WIDTH
         cali_bbox[:, 1] *= MUXER_OUTPUT_HEIGHT
         trans_matrix = cv2.getPerspectiveTransform(cali_bbox, target_bbox)
